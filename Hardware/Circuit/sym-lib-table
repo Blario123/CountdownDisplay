@@ -1,0 +1,5 @@
+(sym_lib_table
+  (lib (name "STM32G0B1CET6N")(type "KiCad")(uri "${KIPRJMOD}/Libraries/STM32G0B1CET6N/STM32G0B1CET6N.kicad_sym")(options "")(descr ""))
+  (lib (name "1056")(type "KiCad")(uri "${KIPRJMOD}/Libraries/1056/1056.kicad_sym")(options "")(descr ""))
+  (lib (name "FTSH-107-01-L-DV-K-A")(type "KiCad")(uri "${KIPRJMOD}/Libraries/FTSH-107-01-L-DV-K-A/FTSH-107-01-L-DV-K-A.kicad_sym")(options "")(descr ""))
+)

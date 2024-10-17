@@ -1,0 +1,5 @@
+(fp_lib_table
+  (lib (name "237-8297")(type "KiCad")(uri "${KIPRJMOD}/Libraries/237-8297/237-8297.pretty")(options "")(descr ""))
+  (lib (name "1056")(type "KiCad")(uri "${KIPRJMOD}/Libraries/1056")(options "")(descr ""))
+  (lib (name "FTSH-107-01-L-DV-K-A")(type "KiCad")(uri "${KIPRJMOD}/Libraries/FTSH-107-01-L-DV-K-A")(options "")(descr ""))
+)
