@@ -45,7 +45,8 @@ typedef struct {
 typedef struct {
 	const char* text;
 	PixelData colour;
-	Rect boundingRect;
+	Point point;
+	bool centered;
 } TextElement;
 
 /* USER CODE END PTD */
@@ -120,12 +121,14 @@ static void MX_SPI1_Init(void);
 void writeLCD(ST7735_JOB job, uint8_t *data);
 void writeLCDColour(PixelData data);
 PixelData colourFromHex(uint8_t r, uint8_t g, uint8_t b);
-void drawText(uint8_t index);
-Rect drawTextCentered(uint8_t x, uint8_t y, const char* text, PixelData colour);
+Rect drawText(Point pos, const char* text, PixelData colour);
+Rect drawTextCentered(Point pos, const char* text, PixelData colour);
 Rect drawCharacter(uint8_t x, uint8_t y, FontCharacter character, PixelData colour);
+void updateBuffer();
 void updateScreen();
 void updateRect(Rect rect);
-void addTextElement(const char* text, PixelData colour, Rect rect);
+void addText(const char* text, PixelData colour, Point pos, bool centered);
+void removeText(int index);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -142,7 +145,7 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-	  textElements = malloc(sizeof(TextElement));
+//	  textElements = malloc(sizeof(TextElement));
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -211,17 +214,11 @@ int main(void)
   for(int i = 0; i < jobSize; i++) {
 	  writeLCD(jobs[i], startupData);
   }
-  writeLCD((ST7735_JOB) {ST7735_DISPOFF, 0, 0, 100}, 0);
   writeLCDColour(colourFromHex(0x35, 0x35, 0x35)); // Set background colour
-  addTextElement("ABC\n123", Magenta, (Rect) {50, 50, 0, 0});
-  updateScreen(); // Push screen 2D array to memory
-  writeLCD((ST7735_JOB) {ST7735_DISPON, 0, 0, 100}, 0);
-  addTextElement("AAA", Cyan, (Rect) {0, 0, 0, 0});
-  writeLCD((ST7735_JOB) {ST7735_DISPOFF, 0, 0, 100}, 0);
-  for(int i = 0; i < textElementsCount; i++) {
-	updateRect(textElements[i].boundingRect);
-  }
-  writeLCD((ST7735_JOB) {ST7735_DISPON, 0, 0, 100}, 0);
+  updateScreen();
+//  addText("ABC\n123", Magenta, (Point) {50, 50}, true); // textElement[0]
+//  addText("AAA", Cyan, (Point) {0, 0}, false); // textElement[1]
+//  updateBuffer();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -248,17 +245,12 @@ void SystemClock_Config(void)
   */
   HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Configure LSE Drive Capability
-  */
-  HAL_PWR_EnableBkUpAccess();
-  __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
-
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
-  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -271,7 +263,7 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSE;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
@@ -339,7 +331,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -414,19 +406,16 @@ PixelData colourFromHex(uint8_t r, uint8_t g, uint8_t b) {
 	return (PixelData) {{r, g, b}};
 }
 
-void drawText(uint8_t index) {
-	TextElement te = textElements[index];
-	uint8_t x = te.boundingRect.x;
-	uint8_t y = te.boundingRect.y;
-	Rect temp = {x, y, 0, 45};
-	size_t textLength = strlen(te.text);
-	uint8_t xPos = x;
-	uint8_t yPos = y;
+Rect drawText(Point point, const char* text, PixelData colour) {
+	Rect temp = {point.x, point.y, 0, 45};
+	size_t textLength = strlen(text);
+	uint8_t xPos = point.x;
+	uint8_t yPos = point.y;
 	bool draw = true;
 	for(int i = 0; i < textLength; i++) {
-		char currChar = te.text[i];
-		if((xPos - x) > temp.w) {
-			temp.w = xPos - x;
+		char currChar = text[i];
+		if((xPos - point.x) > temp.w) {
+			temp.w = xPos - point.x;
 		}
 		switch(currChar) {
 			case 'A' ... 'Z':
@@ -438,7 +427,7 @@ void drawText(uint8_t index) {
 				break;
 			case '\n':
 				draw = false;
-				xPos = x;
+				xPos = point.x;
 				yPos += 45;
 				temp.h += 45;
 				break;
@@ -447,17 +436,16 @@ void drawText(uint8_t index) {
 		}
 		if(draw) {
 			FontCharacter fc = font[(uint8_t) currChar];
-			(void) drawCharacter(xPos, yPos, fc, te.colour);
+			(void) drawCharacter(xPos, yPos, fc, colour);
 			xPos += 24;
 		}
 		draw = true;
 	}
-	temp.w += 17;
-	textElements[index].boundingRect.w = temp.w;
-	textElements[index].boundingRect.h = temp.h;
+	temp.w += 17; // ??
+	return temp;
 }
 
-Rect drawTextCentered(uint8_t x, uint8_t y, const char* text, PixelData colour) {
+Rect drawTextCentered(Point point, const char* text, PixelData colour) {
 	Rect temp = {0, 0, 0, 0};
 	return temp;
 }
@@ -485,7 +473,18 @@ Rect drawCharacter(uint8_t x, uint8_t y, FontCharacter character, PixelData colo
 	return (Rect) {x, y, 32, 45};
 }
 
+void updateBuffer() {
+	for(int i = 0; i < textElementsCount; i++) {
+		if(textElements[i].centered) {
+			drawTextCentered(textElements[i].point, textElements[i].text, textElements[i].colour);
+		} else {
+			(void) drawText(textElements[i].point, textElements[i].text, textElements[i].colour);
+		}
+	}
+}
+
 void updateScreen() {
+    writeLCD((ST7735_JOB) {ST7735_DISPOFF, 0, 0, 100}, 0);
 	uint8_t width[4] = {0x00, 0x00, 0x00, 0x7F}; // Max width and height
 	uint8_t height[4] = {0x00, 0x00, 0x00, 0x9F};
 	ST7735_JOB j = {ST7735_RASET, 0, 4, 0};
@@ -502,9 +501,11 @@ void updateScreen() {
 		}
 	}
 	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET);
+    writeLCD((ST7735_JOB) {ST7735_DISPON, 0, 0, 100}, 0);
 }
 
 void updateRect(Rect rect) {
+    writeLCD((ST7735_JOB) {ST7735_DISPOFF, 0, 0, 100}, 0);
 	uint8_t width[4] = {0x00, rect.x, 0x00, rect.x + rect.w}; // Bounding rect of object
 	uint8_t height[4] = {0x00, rect.y, 0x00, rect.y + rect.h - 1};
 	ST7735_JOB j = {ST7735_RASET, 0, 4, 0};
@@ -517,16 +518,26 @@ void updateRect(Rect rect) {
 	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET);
 	for(int i = rect.x; i < rect.x + rect.w; i++) {
 		for(int j = rect.y; j < rect.y + rect.h; j++) {
-			HAL_SPI_Transmit(&hspi1, screen[i][j].data, 3, HAL_MAX_DELAY);
+			HAL_SPI_Transmit(&hspi1, screen[i][j].data, 3, 10);
 		}
 	}
 	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET);
+    writeLCD((ST7735_JOB) {ST7735_DISPON, 0, 0, 100}, 0);
 }
 
-void addTextElement(const char* text, PixelData colour, Rect rect) {
-	TextElement te = {text, colour, rect};
-	textElements[textElementsCount] = te;
+void addText(const char* text, PixelData colour, Point pos, bool centered) {
+	TextElement te = {text, colour, pos, centered};
 	textElements = realloc(textElements, textElementsCount++); // Add another spare element to the end of the array.
+	textElements[textElementsCount] = te;
+}
+
+void removeText(int index) {
+	if(index > textElementsCount) {
+		return;
+	}
+	for(int i = index; i < textElementsCount; i++) {
+		textElements[i] = textElements[i + 1];
+	}
 }
 
 int __io_putchar(int ch) {
