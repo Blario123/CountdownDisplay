@@ -1,2 +1,10 @@
 Software/**/Debug/
 Software/**/Release/
+# Don't upload the example binary files
+Software/Examples/*/LongestLine
+Software/Examples/*/TextElementBuffer
+# Eclipse workspace directories
+**/.metadata/
+**/.settings/
+# Kicad backups
+**/Circuit-backups/
