@@ -8,3 +8,5 @@ Software/Examples/*/TextElementBuffer
 **/.settings/
 # Kicad backups
 **/Circuit-backups/
+
+**/.idea/

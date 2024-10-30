@@ -66,6 +66,8 @@ RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim2;
+
 /* USER CODE BEGIN PV */
 PixelData screen[128][160];
 
@@ -109,7 +111,7 @@ FontCharacter font[] = { // A-Z, 0-9 (36 total characters)
 };
 
 uint8_t textElementsCount = 0;
-TextElement* textElements;
+TextElement textElements[32];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -117,6 +119,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 void writeLCD(ST7735_JOB job, uint8_t *data);
 void writeLCDColour(PixelData data);
@@ -127,7 +130,6 @@ void updateBuffer();
 void updateScreen();
 void updateRect(Rect rect);
 void addText(const char* text, PixelData colour, Point pos, bool centered);
-void addTextElement(TextElement te);
 void removeText(int index);
 /* USER CODE END PFP */
 
@@ -144,8 +146,6 @@ int main(void)
 {
 
 	/* USER CODE BEGIN 1 */
-	// Allocate 1 element to the array.
-	textElements = calloc(0, sizeof(TextElement));
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -209,15 +209,17 @@ int main(void)
 	MX_GPIO_Init();
 	MX_RTC_Init();
 	MX_SPI1_Init();
+	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
+	HAL_Delay(1000);
 	uint32_t jobSize = sizeof(jobs) / sizeof(ST7735_JOB);
 	for(int i = 0; i < jobSize; i++) {
 		writeLCD(jobs[i], startupData);
 	}
 	writeLCDColour(colourFromHex(0x35, 0x35, 0x35)); // Set background colour
 	updateScreen();
-	addText("ABC\n123", Magenta, (Point) {50, 50}, true); // textElement[0]
-	addText("AAA", Cyan, (Point) {0, 0}, false); // textElement[1]
+	addText("ABC\n123", Magenta, (Point) {50, 50}, true);
+	addText("AAA", Cyan, (Point) {0, 0}, false);
 	updateBuffer();
 	/* USER CODE END 2 */
 
@@ -331,7 +333,7 @@ static void MX_SPI1_Init(void)
 	hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
 	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
 	hspi1.Init.NSS = SPI_NSS_SOFT;
-	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
 	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
 	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
 	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -345,6 +347,51 @@ static void MX_SPI1_Init(void)
 	/* USER CODE BEGIN SPI1_Init 2 */
 
 	/* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+ * @brief TIM2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM2_Init(void)
+{
+
+	/* USER CODE BEGIN TIM2_Init 0 */
+
+	/* USER CODE END TIM2_Init 0 */
+
+	TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+	/* USER CODE BEGIN TIM2_Init 1 */
+
+	/* USER CODE END TIM2_Init 1 */
+	htim2.Instance = TIM2;
+	htim2.Init.Prescaler = 1000;
+	htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim2.Init.Period = 4294967295;
+	htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+	if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM2_Init 2 */
+
+	/* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -536,12 +583,7 @@ void updateRect(Rect rect) {
 
 void addText(const char* text, PixelData colour, Point pos, bool centered) {
 	TextElement te = {text, colour, pos, centered};
-	addTextElement(te);
-}
-
-void addTextElement(TextElement te) {
 	textElements[textElementsCount++] = te;
-	textElements = realloc(textElements, textElementsCount); // Add another spare element to the end of the array.
 }
 
 void removeText(int index) {
