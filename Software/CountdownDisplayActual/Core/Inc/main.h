@@ -31,12 +31,30 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdbool.h"
+#include "st7735.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+typedef struct {
+	uint8_t x;
+	uint8_t y;
+	uint8_t w;
+	uint8_t h;
+} Rect;
 
+typedef struct {
+	uint8_t x;
+	uint8_t y;
+} Point;
+
+typedef struct {
+	const char* text;
+	PixelData colour;
+	Point point;
+	bool centered;
+} TextElement;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -54,6 +72,14 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 void updateBuffer();
+void addText(const char* text, PixelData colour, Point pos, bool centered);
+void removeText(int index);
+int calculateDaysRemaining(RTC_DateTypeDef from, RTC_DateTypeDef to);
+char* intToString(int i);
+extern int currentDate;
+extern RTC_DateTypeDef jan1;
+extern RTC_HandleTypeDef hrtc;
+extern int daysRemaining;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

@@ -30,24 +30,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef struct {
-	uint8_t x;
-	uint8_t y;
-	uint8_t w;
-	uint8_t h;
-} Rect;
 
-typedef struct {
-	uint8_t x;
-	uint8_t y;
-} Point;
-
-typedef struct {
-	const char* text;
-	PixelData colour;
-	Point point;
-	bool centered;
-} TextElement;
 
 /* USER CODE END PTD */
 
@@ -111,7 +94,20 @@ FontCharacter font[] = { // A-Z, 0-9 (36 total characters)
 };
 
 uint8_t textElementsCount = 0;
+// Text element buffer, 32 elements max!
+// Allocated to disallow dynamic allocation.
 TextElement textElements[32];
+
+// Destination date struct
+RTC_DateTypeDef jan1 = {
+		RTC_WEEKDAY_WEDNESDAY,
+		RTC_MONTH_JANUARY,
+		1,
+		25
+};
+
+int currentDate;
+int daysRemaining;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -131,6 +127,8 @@ void updateScreen();
 void updateRect(Rect rect);
 void addText(const char* text, PixelData colour, Point pos, bool centered);
 void removeText(int index);
+int calculateDaysRemaining(RTC_DateTypeDef from, RTC_DateTypeDef to);
+char* intToString(int i);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -193,8 +191,8 @@ int main(void)
 			{ST7735_GAMCTRP1, 29, 16, 0},
 			{ST7735_GAMCTRN1, 45, 16, 0},
 			{ST7735_NORON, 51, 0, 10},
-			{ST7735_DISPON, 51, 0, 100},
 			{ST7735_TEOFF, 51, 0, 0},
+			{ST7735_DISPON, 51, 0, 100},
 	};
 	/* USER CODE END Init */
 
@@ -211,16 +209,17 @@ int main(void)
 	MX_SPI1_Init();
 	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
-	HAL_Delay(1000);
 	uint32_t jobSize = sizeof(jobs) / sizeof(ST7735_JOB);
 	for(int i = 0; i < jobSize; i++) {
 		writeLCD(jobs[i], startupData);
 	}
 	writeLCDColour(colourFromHex(0x35, 0x35, 0x35)); // Set background colour
 	updateScreen();
-	addText("ABC\n123", Magenta, (Point) {50, 50}, true);
-	addText("AAA", Cyan, (Point) {0, 0}, false);
+	addText("Days\nLeft", White, (Point) {64, 60}, true);
 	updateBuffer();
+	RTC_DateTypeDef currDate;
+	HAL_RTC_GetDate(&hrtc, &currDate, RTC_FORMAT_BCD);
+	currentDate = currDate.WeekDay;
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -285,6 +284,9 @@ static void MX_RTC_Init(void)
 
 	/* USER CODE END RTC_Init 0 */
 
+	RTC_TimeTypeDef sTime = {0};
+	RTC_DateTypeDef sDate = {0};
+
 	/* USER CODE BEGIN RTC_Init 1 */
 
 	/* USER CODE END RTC_Init 1 */
@@ -301,6 +303,32 @@ static void MX_RTC_Init(void)
 	hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
 	hrtc.Init.OutPutPullUp = RTC_OUTPUT_PULLUP_NONE;
 	if (HAL_RTC_Init(&hrtc) != HAL_OK)
+	{
+		Error_Handler();
+	}
+
+	/* USER CODE BEGIN Check_RTC_BKUP */
+
+	/* USER CODE END Check_RTC_BKUP */
+
+	/** Initialize RTC and set the Time and Date
+	 */
+	sTime.Hours = 0x7;
+	sTime.Minutes = 0x20;
+	sTime.Seconds = 0x0;
+	sTime.SubSeconds = 0x0;
+	sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+	sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+	if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sDate.WeekDay = RTC_WEEKDAY_THURSDAY;
+	sDate.Month = RTC_MONTH_OCTOBER;
+	sDate.Date = 0x31;
+	sDate.Year = 0x24;
+
+	if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
 	{
 		Error_Handler();
 	}
@@ -438,6 +466,7 @@ void writeLCD(ST7735_JOB job, uint8_t *data) {
 			HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET);
 		}
 	}
+	HAL_SPI_Abort(&hspi1);
 }
 
 void writeLCDColour(PixelData data) {
@@ -488,13 +517,16 @@ void drawText(TextElement te) {
 		case 'A' ... 'Z':
 		currChar -= 'A';
 		break;
+		case 'a' ... 'z':
+		currChar -= 'a';
+		break;
 		case '0' ... '9':
 		currChar -= '0';
 		currChar += 26;
 		break;
 		case '\n':
 			draw = false;
-			xPos = te.point.x;
+			xPos = te.point.x - xOffset;
 			yPos += 45;
 			break;
 		default:
@@ -538,7 +570,7 @@ void updateBuffer() {
 }
 
 void updateScreen() {
-	writeLCD((ST7735_JOB) {ST7735_DISPOFF, 0, 0, 100}, 0);
+	//	writeLCD((ST7735_JOB) {ST7735_DISPOFF, 0, 0, 100}, 0);
 	uint8_t width[4] = {0x00, 0x00, 0x00, 0x7F}; // Max width and height
 	uint8_t height[4] = {0x00, 0x00, 0x00, 0x9F};
 	ST7735_JOB j = {ST7735_RASET, 0, 4, 0};
@@ -551,13 +583,14 @@ void updateScreen() {
 	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET);
 	for(int i = 0; i < 128; i++) {
 		for(int j = 0; j < 160; j++) {
-			if(HAL_SPI_Transmit(&hspi1, screen[i][j].data, 3, HAL_MAX_DELAY) != HAL_OK) {
+			if(HAL_SPI_Transmit(&hspi1, screen[i][j].data, 3, 10) != HAL_OK) {
 				Error_Handler();
 			}
 		}
 	}
 	HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_SET);
 	writeLCD((ST7735_JOB) {ST7735_DISPON, 0, 0, 100}, 0);
+	HAL_SPI_Abort(&hspi1);
 }
 
 void updateRect(Rect rect) {
@@ -593,6 +626,14 @@ void removeText(int index) {
 	for(int i = index; i < textElementsCount; i++) {
 		textElements[i] = textElements[i + 1];
 	}
+}
+
+int calculateDaysRemaining(RTC_DateTypeDef from, RTC_DateTypeDef to) {
+
+}
+
+char* intToString(int i) {
+
 }
 
 /* USER CODE END 4 */
